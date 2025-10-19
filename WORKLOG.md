@@ -16,40 +16,44 @@ factctl is a runtime orchestrator for Factorio game instances, managing mods, ru
 ## Priority Tasks
 
 ### 1. Instance Management System
-- [ ] Define instance configuration structure
-  - [ ] Create configuration schema
-  - [ ] Add validation logic
-  - [ ] Write configuration tests
-- [ ] Implement instance creation (`up` command)
-  - [ ] Directory structure creation
-  - [ ] Configuration file generation
-  - [ ] Mod directory setup
-  - [ ] Save game management
-- [ ] Implement instance removal (`down` command)
-  - [ ] Safe cleanup procedures
-  - [ ] Backup handling
-- [ ] Implement instance launching (`run` command)
-  - [ ] Runtime environment setup
-  - [ ] Command-line argument handling
-  - [ ] Process management
-- [ ] Add log streaming functionality
-  - [ ] Log file handling
-  - [ ] Real-time streaming
-  - [ ] Log rotation support
+- [x] Define instance configuration structure
+  - [x] Create configuration schema
+  - [x] Add validation logic
+  - [x] Write configuration tests
+- [x] Implement instance creation (`up` command)
+  - [x] Directory structure creation
+  - [x] Configuration file generation
+  - [x] Mod directory setup
+  - [x] Save game management
+- [x] Implement instance removal (`down` command)
+  - [x] Safe cleanup procedures
+  - [x] Backup handling
+  - [x] Backup restoration
+- [x] Implement instance launching (`run` command)
+  - [x] Runtime environment setup
+  - [x] Command-line argument handling
+  - [x] Process management
+  - [x] Graceful shutdown handling
+- [x] Add log streaming functionality
+  - [x] Log file handling
+  - [x] Real-time streaming
+  - [x] Log rotation support
+  - [x] Log parsing and filtering
+  - [x] Historical log access
 
 ### 2. Mod Management System
-- [ ] Design dependency resolution system
-  - [ ] Version constraint parsing
-  - [ ] Dependency graph building
-  - [ ] Conflict resolution
-- [ ] Implement mod installation workflow
-  - [ ] Download management
-  - [ ] Installation verification
-  - [ ] Update checking
-- [ ] Add mod configuration handling
-  - [ ] Settings file management
-  - [ ] Default configuration
-  - [ ] User overrides
+- [x] Design dependency resolution system
+  - [x] Version constraint parsing
+  - [x] Dependency graph building
+  - [x] Version compatibility checking
+- [x] Implement mod installation workflow
+  - [x] Download management
+  - [x] Installation verification
+  - [x] Dependency handling
+- [x] Add mod configuration handling
+  - [x] Mod list management
+  - [x] Enable/disable functionality
+  - [x] Mod info extraction
 
 ### 3. Runtime Management System
 - [ ] Add Factorio version management
@@ -98,7 +102,11 @@ factctl is a runtime orchestrator for Factorio game instances, managing mods, ru
   - [ ] Multi-mod configurations
 
 ## In Progress
-(No tasks currently in progress)
+2. Mod Management System
+   - Implementing mod installation
+   - Dependency resolution
+   - Version constraint handling
+   - Mod configuration management
 
 ## Completed Tasks
 1. [x] Source Resolution System
