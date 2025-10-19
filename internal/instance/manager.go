@@ -31,6 +31,11 @@ func NewManager(baseDir string) *Manager {
 	}
 }
 
+// BaseDir returns the base directory for instances
+func (m *Manager) BaseDir() string {
+	return m.baseDir
+}
+
 // DefaultLocation returns the default base directory for instances
 func DefaultLocation() (string, error) {
 	// Use platform-specific default locations

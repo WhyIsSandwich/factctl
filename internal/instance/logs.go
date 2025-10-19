@@ -52,6 +52,11 @@ func NewLogManager(baseDir string) *LogManager {
 	}
 }
 
+// BaseDir returns the base directory for logs
+func (lm *LogManager) BaseDir() string {
+	return lm.baseDir
+}
+
 // Subscribe adds a log handler for an instance
 func (lm *LogManager) Subscribe(instanceName string, handler LogHandler) {
 	lm.mu.Lock()

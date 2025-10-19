@@ -1,0 +1,25 @@
+{
+  // Modded server configuration with popular mods
+  "name": "modded-server",
+  "version": "1.1",
+  "headless": true,
+  "port": 34198,
+  "save_file": "modded-world.zip",
+  "mods": {
+    "enabled": ["base", "bobmods", "angelsmods", "space-exploration"],
+    "sources": {
+      "bobmods": "portal:bobmods",
+      "angelsmods": "github:Angel-666/AngelMods",
+      "space-exploration": "portal:space-exploration"
+    }
+  },
+  "server": {
+    "name": "Modded Factorio Server",
+    "max_players": 8,
+    "public": false,
+    "password": "modded123",
+    "admins": ["admin1", "admin2"],
+    "auto_save": true,
+    "auto_save_interval": 5
+  }
+}

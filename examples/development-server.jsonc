@@ -1,0 +1,23 @@
+{
+  // Development server for mod development
+  "name": "dev-server",
+  "version": "1.1",
+  "headless": false,
+  "port": 34199,
+  "save_file": "dev-world.zip",
+  "mods": {
+    "enabled": ["base", "my-mod"],
+    "sources": {
+      "my-mod": "git:https://github.com/user/my-mod.git"
+    }
+  },
+  "server": {
+    "name": "Development Server",
+    "max_players": 2,
+    "public": false,
+    "password": "",
+    "admins": ["developer"],
+    "auto_save": true,
+    "auto_save_interval": 1
+  }
+}

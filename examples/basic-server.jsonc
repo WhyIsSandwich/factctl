@@ -1,0 +1,21 @@
+{
+  // Basic server configuration
+  "name": "basic-server",
+  "version": "1.1",
+  "headless": true,
+  "port": 34197,
+  "save_file": "world.zip",
+  "mods": {
+    "enabled": ["base"],
+    "sources": {}
+  },
+  "server": {
+    "name": "Basic Factorio Server",
+    "max_players": 4,
+    "public": false,
+    "password": "",
+    "admins": [],
+    "auto_save": true,
+    "auto_save_interval": 10
+  }
+}
