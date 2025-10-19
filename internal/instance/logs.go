@@ -48,7 +48,7 @@ func NewLogManager(baseDir string) *LogManager {
 		baseDir:     baseDir,
 		handlers:    make(map[string][]LogHandler),
 		maxFileSize: 10 * 1024 * 1024, // 10MB default
-		maxFiles:    5,                 // Keep 5 rotated files by default
+		maxFiles:    5,                // Keep 5 rotated files by default
 	}
 }
 
@@ -81,7 +81,7 @@ func (lm *LogManager) Unsubscribe(instanceName string, handler LogHandler) {
 // StreamLogs starts streaming logs for an instance
 func (lm *LogManager) StreamLogs(ctx context.Context, instanceName string) error {
 	logPath := filepath.Join(lm.baseDir, "instances", instanceName, "factorio.log")
-	
+
 	// Open log file
 	file, err := os.Open(logPath)
 	if err != nil {
@@ -112,7 +112,7 @@ func (lm *LogManager) StreamLogs(ctx context.Context, instanceName string) error
 				if scanner.Scan() {
 					line := scanner.Text()
 					entry := lm.parseLine(line)
-					
+
 					// Update position
 					currentPos += int64(len(line) + 1) // +1 for newline
 
@@ -285,7 +285,7 @@ func (lm *LogManager) SetMaxFiles(count int) {
 // GetLogHistory returns recent log entries for an instance
 func (lm *LogManager) GetLogHistory(instanceName string, maxLines int) ([]LogEntry, error) {
 	logPath := filepath.Join(lm.baseDir, "instances", instanceName, "factorio.log")
-	
+
 	file, err := os.Open(logPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening log file: %w", err)
@@ -294,7 +294,7 @@ func (lm *LogManager) GetLogHistory(instanceName string, maxLines int) ([]LogEnt
 
 	var entries []LogEntry
 	scanner := bufio.NewScanner(file)
-	
+
 	// Read all lines first (we'll trim later)
 	for scanner.Scan() {
 		entries = append(entries, lm.parseLine(scanner.Text()))

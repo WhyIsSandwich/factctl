@@ -84,10 +84,10 @@ func TestModManager(t *testing.T) {
 		modInfo := &ModInfo{
 			Name:            "test-mod",
 			Version:         "1.0.0",
-			Title:          "Test Mod",
-			Author:         "Tester",
-			Description:    "A test mod",
-			Dependencies:   []string{"base >= 1.1"},
+			Title:           "Test Mod",
+			Author:          "Tester",
+			Description:     "A test mod",
+			Dependencies:    []string{"base >= 1.1"},
 			FactorioVersion: "1.1.0",
 		}
 
@@ -97,7 +97,7 @@ func TestModManager(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create mod file: %v", err)
 		}
-		
+
 		if err := createTestModZip(modFile, modInfo); err != nil {
 			modFile.Close()
 			t.Fatalf("Failed to create test mod zip: %v", err)
@@ -191,8 +191,8 @@ func TestModManager(t *testing.T) {
 	t.Run("version compatibility", func(t *testing.T) {
 		tests := []struct {
 			factorioVersion string
-			modVersion     string
-			want           bool
+			modVersion      string
+			want            bool
 		}{
 			{"1.1.87", "1.1.0", true},
 			{"1.1.87", "1.0.0", false},

@@ -226,8 +226,8 @@ func TestInstanceCreation(t *testing.T) {
 				Server: &ServerConfig{
 					Name:             "Test Server",
 					MaxPlayers:       32,
-					Public:          true,
-					AutoSave:        true,
+					Public:           true,
+					AutoSave:         true,
 					AutoSaveInterval: 5,
 				},
 			},
@@ -288,7 +288,7 @@ func TestInstanceCreation(t *testing.T) {
 		},
 		{
 			name: "invalid config",
-			cfg: &Config{
+			cfg:  &Config{
 				// Missing required fields
 			},
 			wantErr: true,

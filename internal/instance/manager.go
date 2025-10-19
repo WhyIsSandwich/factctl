@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -142,19 +143,19 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 	// Create server-settings.json if this is a server
 	if cfg.Server != nil {
 		serverConfig := map[string]interface{}{
-			"name":              cfg.Server.Name,
-			"description":       cfg.Server.Name, // Use name as default description
-			"max_players":       cfg.Server.MaxPlayers,
+			"name":        cfg.Server.Name,
+			"description": cfg.Server.Name, // Use name as default description
+			"max_players": cfg.Server.MaxPlayers,
 			"visibility": map[string]interface{}{
 				"public": cfg.Server.Public,
 				"lan":    true,
 			},
-			"username":          "",
-			"password":          cfg.Server.Password,
+			"username":                  "",
+			"password":                  cfg.Server.Password,
 			"require_user_verification": cfg.Server.Password != "",
-			"admins":           cfg.Server.Admins,
+			"admins":                    cfg.Server.Admins,
 			"auto_save": map[string]interface{}{
-				"enabled": cfg.Server.AutoSave,
+				"enabled":  cfg.Server.AutoSave,
 				"interval": cfg.Server.AutoSaveInterval,
 				"slots":    5,
 			},
@@ -181,7 +182,7 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 // Remove removes an instance and optionally creates a backup
 func (m *Manager) Remove(name string, backup bool) error {
 	instDir := filepath.Join(m.baseDir, "instances", name)
-	
+
 	// Check if instance exists
 	if _, err := os.Stat(instDir); os.IsNotExist(err) {
 		return fmt.Errorf("instance %s does not exist", name)
@@ -206,7 +207,7 @@ func (m *Manager) Remove(name string, backup bool) error {
 func (m *Manager) createBackup(name string) error {
 	instDir := filepath.Join(m.baseDir, "instances", name)
 	backupDir := filepath.Join(m.baseDir, "backups")
-	
+
 	// Ensure backup directory exists
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return fmt.Errorf("creating backup directory: %w", err)
@@ -249,6 +250,8 @@ func (m *Manager) createBackup(name string) error {
 			return fmt.Errorf("getting relative path: %w", err)
 		}
 
+		log.Printf("DEBUG: Adding to backup: %s (relative: %s)", path, relPath)
+
 		// Create tar header with link target for symlinks
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
@@ -286,7 +289,7 @@ func (m *Manager) createBackup(name string) error {
 func (m *Manager) ListBackups(name string) ([]string, error) {
 	backupDir := filepath.Join(m.baseDir, "backups")
 	pattern := filepath.Join(backupDir, fmt.Sprintf("%s-*.tar.gz", name))
-	
+
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("listing backups: %w", err)
@@ -317,12 +320,17 @@ func (m *Manager) RestoreBackup(backupName string) error {
 	// Extract instance name from backup name
 	// backupName format: <instance-name>-<timestamp>.tar.gz
 	base := strings.TrimSuffix(backupName, ".tar.gz")
+	
+	// Extract just the instance name (before the timestamp)
 	idx := strings.LastIndex(base, "-")
 	if idx == -1 {
 		return fmt.Errorf("invalid backup name format")
 	}
 	instName := base[:idx]
+
+	// Set up target paths
 	instDir := filepath.Join(m.baseDir, "instances", instName)
+	log.Printf("DEBUG: Restoring backup from %s to %s", backupPath, instDir)
 
 	// Create a temporary directory for extraction
 	tmpDir, err := os.MkdirTemp("", "factctl-restore-*")
@@ -361,6 +369,7 @@ func (m *Manager) RestoreBackup(backupName string) error {
 		// Clean the file path and convert to native separators
 		cleanPath := filepath.FromSlash(header.Name)
 		target := filepath.Join(tmpDir, cleanPath)
+		log.Printf("DEBUG: Extracting %s to %s", header.Name, target)
 
 		// Ensure the target path is within the temp directory
 		rel, err := filepath.Rel(tmpDir, target)
@@ -401,11 +410,12 @@ func (m *Manager) RestoreBackup(backupName string) error {
 	}
 
 	// Create the parent instances directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(instDir), 0755); err != nil {
-		return fmt.Errorf("creating parent instances directory: %w", err)
+	instancesDir := filepath.Dir(instDir)
+	if err := os.MkdirAll(instancesDir, 0755); err != nil {
+		return fmt.Errorf("creating instances directory: %w", err)
 	}
 
-	// Move the extracted files from temp directory to final location
+	// Move the entire temporary directory to become the instance directory
 	if err := os.Rename(tmpDir, instDir); err != nil {
 		return fmt.Errorf("moving restored files to instance directory: %w", err)
 	}

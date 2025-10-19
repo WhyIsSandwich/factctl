@@ -12,29 +12,29 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blang/semver"
 	"github.com/WhyIsSandwich/factctl/internal/resolve"
+	"github.com/blang/semver"
 )
 
 // ModInfo represents metadata from a mod's info.json
 type ModInfo struct {
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Title        string   `json:"title"`
-	Author       string   `json:"author"`
-	Contact      string   `json:"contact,omitempty"`
-	Homepage     string   `json:"homepage,omitempty"`
-	Description  string   `json:"description"`
-	Dependencies []string `json:"dependencies"`
-	FactorioVersion string `json:"factorio_version,omitempty"`
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	Title           string   `json:"title"`
+	Author          string   `json:"author"`
+	Contact         string   `json:"contact,omitempty"`
+	Homepage        string   `json:"homepage,omitempty"`
+	Description     string   `json:"description"`
+	Dependencies    []string `json:"dependencies"`
+	FactorioVersion string   `json:"factorio_version,omitempty"`
 }
 
 // ModManager handles mod installation and management
 type ModManager struct {
-	baseDir    string
-	resolver   *resolve.Resolver
-	modInfos   map[string]*ModInfo
-	mu         sync.RWMutex
+	baseDir  string
+	resolver *resolve.Resolver
+	modInfos map[string]*ModInfo
+	mu       sync.RWMutex
 }
 
 // NewModManager creates a new mod manager
@@ -69,7 +69,7 @@ func (mm *ModManager) InstallMod(ctx context.Context, inst *Instance, modSpec st
 	// Check Factorio version compatibility
 	if modInfo.FactorioVersion != "" {
 		if !isVersionCompatible(inst.Config.Version, modInfo.FactorioVersion) {
-			return fmt.Errorf("mod requires Factorio %s but instance uses %s", 
+			return fmt.Errorf("mod requires Factorio %s but instance uses %s",
 				modInfo.FactorioVersion, inst.Config.Version)
 		}
 	}
@@ -247,7 +247,7 @@ func (mm *ModManager) isModInstalled(inst *Instance, modName string) bool {
 // updateModList updates the mod-list.json file
 func (mm *ModManager) updateModList(inst *Instance, modName string, enabled bool) error {
 	listPath := filepath.Join(inst.Dir, "config", "mod-list.json")
-	
+
 	var list struct {
 		Mods []struct {
 			Name    string `json:"name"`

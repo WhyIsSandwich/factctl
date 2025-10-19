@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
-	"strings"
 )
 
 func TestLogManager(t *testing.T) {
@@ -29,7 +29,7 @@ func TestLogManager(t *testing.T) {
 
 	t.Run("log parsing", func(t *testing.T) {
 		tests := []struct {
-			line     string
+			line      string
 			wantLevel LogLevel
 			wantMsg   string
 		}{
@@ -140,7 +140,7 @@ func TestLogManager(t *testing.T) {
 		logManager.SetMaxFiles(3)      // Keep 3 rotated files
 
 		logPath := filepath.Join(instDir, "factorio.log")
-		
+
 		// Create a large log file
 		largeLog := make([]byte, 200)
 		for i := range largeLog {
