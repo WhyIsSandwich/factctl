@@ -1,0 +1,12 @@
+{
+  // Test configuration for zip file debugging
+  "name": "test-zip3",
+  "version": "1.1",
+  "headless": true,
+  "mods": {
+    "enabled": ["angels:angelsrefining"],
+    "sources": {
+      "angels": "github:Arch666Angel/mods"
+    }
+  }
+}

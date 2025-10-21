@@ -1,0 +1,9 @@
+{
+  // Test configuration for recursive dependency installation with simple mods
+  "name": "test-recursive-simple",
+  "version": "1.1",
+  "headless": true,
+  "mods": {
+    "enabled": ["base"]
+  }
+}

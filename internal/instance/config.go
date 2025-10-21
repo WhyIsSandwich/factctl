@@ -125,8 +125,23 @@ func (c *Config) validate() error {
 		return fmt.Errorf("factorio version is required")
 	}
 
-	if len(c.Mods.Enabled) > 0 && len(c.Mods.Sources) == 0 {
-		return fmt.Errorf("mod sources are required when mods are enabled")
+	// Check if any non-built-in mods require sources
+	builtinMods := map[string]bool{
+		"base": true,
+		"elevated-rails": true,
+		"quality": true,
+		"space-age": true,
+	}
+	
+	nonBuiltinMods := []string{}
+	for _, mod := range c.Mods.Enabled {
+		if !builtinMods[mod] {
+			nonBuiltinMods = append(nonBuiltinMods, mod)
+		}
+	}
+	
+	if len(nonBuiltinMods) > 0 && len(c.Mods.Sources) == 0 {
+		return fmt.Errorf("mod sources are required for non-built-in mods: %v", nonBuiltinMods)
 	}
 
 	if c.Server != nil {

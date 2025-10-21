@@ -15,10 +15,11 @@ const version = "0.1.0"
 func main() {
 	// Define root flags
 	var (
-		showVersion = flag.Bool("version", false, "Show version information")
-		headless    = flag.Bool("headless", false, "Run Factorio in headless mode")
-		config      = flag.String("config", "", "Path to instance configuration file")
-		baseDir     = flag.String("base-dir", "", "Base directory for instances (default: platform-specific)")
+		showVersion  = flag.Bool("version", false, "Show version information")
+		headless     = flag.Bool("headless", false, "Run Factorio in headless mode")
+		config       = flag.String("config", "", "Path to instance configuration file")
+		baseDir      = flag.String("base-dir", "", "Base directory for instances (default: platform-specific)")
+		factorioPath = flag.String("factorio-path", "", "Path to Factorio installation")
 	)
 
 	flag.Usage = func() {
@@ -59,7 +60,12 @@ func main() {
 	}
 
 	// Create managers
-	manager := instance.NewManager(baseDirPath)
+	var manager *instance.Manager
+	if *factorioPath != "" {
+		manager = instance.NewManagerWithFactorio(baseDirPath, *factorioPath)
+	} else {
+		manager = instance.NewManager(baseDirPath)
+	}
 	runtimeManager := instance.NewRuntimeManager(baseDirPath)
 	modManager := instance.NewModManager(baseDirPath)
 	logManager := instance.NewLogManager(baseDirPath)
@@ -127,9 +133,7 @@ func handleUp(manager *instance.Manager, modManager *instance.ModManager, args [
 			Headless: headless,
 			Mods: instance.ModsConfig{
 				Enabled: []string{"base"},
-				Sources: map[string]string{
-					"base": "builtin", // Base mod is built-in
-				},
+				Sources: map[string]string{},
 			},
 		}
 	}
@@ -144,23 +148,21 @@ func handleUp(manager *instance.Manager, modManager *instance.ModManager, args [
 	// Create instance
 	inst, err := manager.Create(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create instance: %w\nHint: Check that you have write permissions to the base directory", err)
+		return fmt.Errorf("failed to create instance: %w\nHint: Check that you have write permissions to the instance directory", err)
 	}
 
 	// Install mods if specified
-	if len(cfg.Mods.Sources) > 0 {
-		fmt.Println("Installing mods...")
+	if len(cfg.Mods.Enabled) > 0 {
+		fmt.Println("Installing mods and dependencies...")
 		ctx := context.Background()
-		successCount := 0
-		for modName, modSource := range cfg.Mods.Sources {
-			fmt.Printf("Installing mod '%s' from '%s'...\n", modName, modSource)
-			if err := modManager.InstallMod(ctx, inst, modSource); err != nil {
-				fmt.Printf("Warning: Failed to install mod '%s': %v\n", modName, err)
-			} else {
-				successCount++
-			}
+		
+		// Use recursive installer to resolve all dependencies
+		installedMods, err := modManager.InstallModsRecursively(ctx, inst, cfg.Mods.Enabled)
+		if err != nil {
+			fmt.Printf("Warning: Some mods failed to install: %v\n", err)
 		}
-		fmt.Printf("Successfully installed %d/%d mods\n", successCount, len(cfg.Mods.Sources))
+		
+		fmt.Printf("Successfully installed %d mods total\n", len(installedMods))
 	}
 
 	fmt.Printf("Instance '%s' created successfully!\n", instanceName)

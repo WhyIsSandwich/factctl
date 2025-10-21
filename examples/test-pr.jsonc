@@ -1,0 +1,13 @@
+{
+  // Test configuration for PR downloading
+  "name": "test-pr",
+  "version": "1.1",
+  "headless": true,
+  "mods": {
+    "enabled": ["angelsrefining","ScienceCostTweakerM"],
+    "sources": {
+      "angels": "github:Arch666Angel/mods@dev2.0",
+      "sct": "ghpr:mexmer/ScienceCostTweakerM#97"
+    }
+  }
+}

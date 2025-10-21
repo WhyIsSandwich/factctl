@@ -1,16 +1,16 @@
 {
   // Modded server configuration with popular mods
-  "name": "modded-server",
-  "version": "1.1",
+  "name": "modded-server2",
+  "version": "2.0",
   "headless": true,
   "port": 34198,
   "save_file": "modded-world.zip",
   "mods": {
-    "enabled": ["base", "bobmods", "angelsmods", "space-exploration"],
+    "enabled": ["SeaBlockMetaPack"],
     "sources": {
-      "bobmods": "portal:bobmods",
-      "angelsmods": "github:Angel-666/AngelMods",
-      "space-exploration": "portal:space-exploration"
+      "angels": "github:Arch666Angel/mods@dev2.0",
+      "seablock": "ghpr:modded-factorio/SeaBlock#343",
+      "sct": "ghpr:mexmer/ScienceCostTweakerM#97"
     }
   },
   "server": {

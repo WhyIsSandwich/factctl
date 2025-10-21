@@ -21,6 +21,8 @@ type Manager struct {
 	baseDir string
 	// Base directory for shared Factorio installations
 	runtimeDir string
+	// Path to Factorio installation (optional, overrides auto-detection)
+	factorioPath string
 }
 
 // NewManager creates a new instance manager
@@ -28,6 +30,15 @@ func NewManager(baseDir string) *Manager {
 	return &Manager{
 		baseDir:    baseDir,
 		runtimeDir: filepath.Join(baseDir, "runtimes"),
+	}
+}
+
+// NewManagerWithFactorio creates a new instance manager with a specific Factorio path
+func NewManagerWithFactorio(baseDir, factorioPath string) *Manager {
+	return &Manager{
+		baseDir:    baseDir,
+		runtimeDir: filepath.Join(baseDir, "runtimes"),
+		factorioPath: factorioPath,
 	}
 }
 
@@ -74,9 +85,10 @@ const (
 
 // Instance represents a Factorio instance
 type Instance struct {
-	Config *Config
-	Dir    string
-	State  InstanceState
+	Config  *Config
+	Dir     string
+	State   InstanceState
+	BaseDir string // Path to base Factorio installation
 }
 
 // Create creates a new instance with the given configuration
@@ -92,18 +104,23 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 		return nil, fmt.Errorf("creating instance directory: %w", err)
 	}
 
-	// Create required subdirectories
-	dirs := []string{
-		filepath.Join(instDir, "saves"),
-		filepath.Join(instDir, "mods"),
-		filepath.Join(instDir, "config"),
-		filepath.Join(instDir, "scripts"),
+	// Find base Factorio installation
+	baseDir, err := m.findBaseFactorio()
+	if err != nil {
+		return nil, fmt.Errorf("finding base Factorio installation: %w", err)
 	}
 
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+	// Create instance-specific directories (real files)
+	instanceDirs := []string{"saves", "mods", "config", "scripts"}
+	for _, dir := range instanceDirs {
+		if err := os.MkdirAll(filepath.Join(instDir, dir), 0755); err != nil {
 			return nil, fmt.Errorf("creating directory %s: %w", dir, err)
 		}
+	}
+
+	// Create symlinks to base Factorio directories
+	if err := m.createSymlinkOverlay(instDir, baseDir); err != nil {
+		return nil, fmt.Errorf("creating symlink overlay: %w", err)
 	}
 
 	// Save configuration
@@ -178,9 +195,10 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 	}
 
 	return &Instance{
-		Config: cfg,
-		Dir:    instDir,
-		State:  StateStopped,
+		Config:  cfg,
+		Dir:     instDir,
+		State:   StateStopped,
+		BaseDir: baseDir,
 	}, nil
 }
 
@@ -205,6 +223,118 @@ func (m *Manager) Remove(name string, backup bool) error {
 		return fmt.Errorf("removing instance directory: %w", err)
 	}
 
+	return nil
+}
+
+// findBaseFactorio finds the base Factorio installation directory
+func (m *Manager) findBaseFactorio() (string, error) {
+	// If manager has a specific Factorio path, use it
+	if m.factorioPath != "" {
+		if _, err := os.Stat(m.factorioPath); err == nil {
+			if m.isValidFactorioInstallation(m.factorioPath) {
+				return m.factorioPath, nil
+			}
+			return "", fmt.Errorf("specified Factorio path is not a valid installation: %s", m.factorioPath)
+		}
+		return "", fmt.Errorf("specified Factorio path does not exist: %s", m.factorioPath)
+	}
+	
+	// Common Factorio installation paths
+	possiblePaths := []string{
+		"/usr/share/factorio",
+		"/usr/local/share/factorio", 
+		"/opt/factorio",
+		"/usr/games/factorio",
+		"/Applications/factorio.app/Contents/data", // macOS
+		"C:\\Program Files\\Factorio",              // Windows
+		"C:\\Program Files (x86)\\Factorio",        // Windows
+	}
+	
+	// Check environment variable first
+	if factorioPath := os.Getenv("FACTORIO_PATH"); factorioPath != "" {
+		if _, err := os.Stat(factorioPath); err == nil {
+			if m.isValidFactorioInstallation(factorioPath) {
+				return factorioPath, nil
+			}
+		}
+	}
+	
+	// Check common paths
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			// Verify it's a Factorio installation by checking for key files
+			if m.isValidFactorioInstallation(path) {
+				return path, nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("Factorio installation not found. Please set FACTORIO_PATH environment variable, use --factorio-path flag, or install Factorio in a standard location")
+}
+
+// isValidFactorioInstallation checks if a directory contains a valid Factorio installation
+func (m *Manager) isValidFactorioInstallation(path string) bool {
+	// Check for key Factorio files/directories
+	requiredPaths := []string{
+		"bin",
+		"data",
+	}
+	
+	for _, reqPath := range requiredPaths {
+		if _, err := os.Stat(filepath.Join(path, reqPath)); err != nil {
+			return false
+		}
+	}
+	
+	// Check for base directory (can be at root or in data/)
+	basePaths := []string{
+		filepath.Join(path, "base"),
+		filepath.Join(path, "data", "base"),
+	}
+	
+	baseFound := false
+	for _, basePath := range basePaths {
+		if _, err := os.Stat(basePath); err == nil {
+			baseFound = true
+			break
+		}
+	}
+	
+	return baseFound
+}
+
+// createSymlinkOverlay creates symlinks to base Factorio directories
+func (m *Manager) createSymlinkOverlay(instDir, baseDir string) error {
+	// Directories to symlink from base Factorio installation
+	baseDirs := []string{
+		"bin",        // Factorio executable and libraries
+		"data",       // Game data files
+		"graphics",   // Graphics assets
+		"locale",     // Localization files
+		"core",       // Core game files
+		"base",       // Base game mod
+	}
+	
+	for _, dir := range baseDirs {
+		basePath := filepath.Join(baseDir, dir)
+		instancePath := filepath.Join(instDir, dir)
+		
+		// Check if base directory exists
+		if _, err := os.Stat(basePath); err != nil {
+			continue // Skip if base directory doesn't exist
+		}
+		
+		// Remove existing file/directory if it exists
+		if err := os.RemoveAll(instancePath); err != nil {
+			return fmt.Errorf("removing existing %s: %w", dir, err)
+		}
+		
+		// Create symlink to base directory
+		if err := os.Symlink(basePath, instancePath); err != nil {
+			return fmt.Errorf("creating symlink for %s: %w", dir, err)
+		}
+	}
+	
 	return nil
 }
 

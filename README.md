@@ -20,7 +20,7 @@ factctl is a command-line tool designed to simplify the management of Factorio g
 ### Prerequisites
 
 - Go 1.24.5 or later
-- Factorio installation (for running instances)
+- Factorio installation (install via Steam, direct download, or package manager)
 
 ### Building from Source
 
@@ -276,7 +276,10 @@ factctl up my-server
 # Check if Factorio is installed
 which factorio
 
-# Install Factorio manually or use system package manager
+# Install Factorio via your preferred method:
+# - Steam: Purchase and install through Steam
+# - Direct: Download from factorio.com
+# - Package manager: Use your system's package manager
 ```
 
 **Permission errors:**
@@ -341,7 +344,6 @@ Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 ## Roadmap
 
-- [ ] Steam integration for Factorio downloads
 - [ ] Web interface for instance management
 - [ ] Plugin system for custom mod sources
 - [ ] Docker support for containerized instances
@@ -349,3 +351,5 @@ Licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
 - [ ] Instance templates and presets
 - [ ] Automated backup scheduling
 - [ ] Performance monitoring and metrics
+- [ ] Real mod download integration (Portal API)
+- [ ] Advanced mod dependency resolution
