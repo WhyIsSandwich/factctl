@@ -1,7 +1,8 @@
 {
   // Modded server configuration with popular mods
-  "name": "modded-server2",
+  "name": "modded-server25343",
   "version": "2.0",
+  "runtime": "2.0", // Optional: specify custom runtime name
   "headless": true,
   "port": 34198,
   "save_file": "modded-world.zip",
@@ -10,7 +11,11 @@
     "sources": {
       "angels": "github:Arch666Angel/mods@dev2.0",
       "seablock": "ghpr:modded-factorio/SeaBlock#343",
-      "sct": "ghpr:mexmer/ScienceCostTweakerM#97"
+      "sct": "ghpr:mexmer/ScienceCostTweakerM#97",
+      "spacemod": "ghpr:billbo99/SpaceMod#2",
+      "circuitprocessing": "ghpr:modded-factorio/CircuitProcessing#30",
+      //"explosive": "ghpr:explosive/explosive#1.0.0",
+      "landfillpainting":"ghpr:modded-factorio/LandfillPainting#18"
     }
   },
   "server": {

@@ -47,7 +47,8 @@ func (rm *RuntimeManager) Start(ctx context.Context, inst *Instance) error {
 	}
 
 	// Ensure runtime is available
-	runtimePath, err := rm.ensureRuntime(inst.Config.Version)
+	runtimeName := inst.Config.GetRuntime()
+	runtimePath, err := rm.ensureRuntime(runtimeName)
 	if err != nil {
 		return fmt.Errorf("ensuring runtime: %w", err)
 	}
@@ -102,9 +103,9 @@ func (rm *RuntimeManager) Start(ctx context.Context, inst *Instance) error {
 	go func() {
 		defer close(proc.Done)
 		defer logFile.Close()
-		
+
 		err := cmd.Wait()
-		
+
 		rm.mu.Lock()
 		delete(rm.processes, inst.Config.Name)
 		rm.mu.Unlock()
@@ -172,19 +173,13 @@ func (rm *RuntimeManager) ensureRuntime(version string) (string, error) {
 	// Check if we have this version in our runtime directory
 	runtimePath := filepath.Join(rm.runtimeDir, version)
 	executablePath := rm.getExecutablePath(runtimePath)
-	
+
 	if _, err := os.Stat(executablePath); err == nil {
 		return executablePath, nil
 	}
 
-	// Try to find system-installed Factorio first
-	systemPath, err := rm.findSystemFactorio()
-	if err == nil {
-		return systemPath, nil
-	}
-
 	// If not found, we need to download it
-	fmt.Printf("Factorio %s not found locally, downloading...\n", version)
+	fmt.Printf("Factorio %s not found in runtimes directory, downloading...\n", version)
 	if err := rm.downloadRuntime(version); err != nil {
 		return "", fmt.Errorf("downloading Factorio %s: %w", version, err)
 	}
@@ -195,35 +190,6 @@ func (rm *RuntimeManager) ensureRuntime(version string) (string, error) {
 	}
 
 	return executablePath, nil
-}
-
-// findSystemFactorio looks for system-installed Factorio
-func (rm *RuntimeManager) findSystemFactorio() (string, error) {
-	var paths []string
-	switch runtime.GOOS {
-	case "windows":
-		paths = []string{
-			"C:\\Program Files\\Factorio\\bin\\x64\\factorio.exe",
-			"C:\\Program Files (x86)\\Factorio\\bin\\x64\\factorio.exe",
-		}
-	case "darwin":
-		paths = []string{
-			"/Applications/factorio.app/Contents/MacOS/factorio",
-		}
-	default: // Linux and others
-		paths = []string{
-			"/usr/bin/factorio",
-			"/usr/local/bin/factorio",
-		}
-	}
-
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-	}
-
-	return "", fmt.Errorf("system Factorio installation not found")
 }
 
 // getExecutablePath returns the path to the Factorio executable for a given version
@@ -248,10 +214,10 @@ func (rm *RuntimeManager) downloadRuntime(version string) error {
 	// For now, we'll implement a basic download mechanism
 	// In a real implementation, this would download from Factorio's servers
 	// or use a package manager like Steam, etc.
-	
+
 	fmt.Printf("  → Creating directory structure...\n")
 	time.Sleep(200 * time.Millisecond) // Simulate directory creation
-	
+
 	versionDir := filepath.Join(rm.runtimeDir, version)
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		return fmt.Errorf("creating version directory: %w", err)
@@ -259,10 +225,10 @@ func (rm *RuntimeManager) downloadRuntime(version string) error {
 
 	fmt.Printf("  → Downloading Factorio %s...\n", version)
 	time.Sleep(1000 * time.Millisecond) // Simulate download time
-	
+
 	fmt.Printf("  → Extracting archive...\n")
 	time.Sleep(500 * time.Millisecond) // Simulate extraction time
-	
+
 	// Create a placeholder executable
 	executablePath := rm.getExecutablePath(versionDir)
 	executableDir := filepath.Dir(executablePath)
@@ -287,7 +253,7 @@ exit 1
 	}
 
 	fmt.Printf("  → Factorio %s setup complete\n", version)
-	
+
 	return nil
 }
 

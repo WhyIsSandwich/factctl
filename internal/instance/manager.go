@@ -23,6 +23,8 @@ type Manager struct {
 	runtimeDir string
 	// Path to Factorio installation (optional, overrides auto-detection)
 	factorioPath string
+	// Use symlinks instead of copying files (default: false, uses copying)
+	useSymlinks bool
 }
 
 // NewManager creates a new instance manager
@@ -36,10 +38,16 @@ func NewManager(baseDir string) *Manager {
 // NewManagerWithFactorio creates a new instance manager with a specific Factorio path
 func NewManagerWithFactorio(baseDir, factorioPath string) *Manager {
 	return &Manager{
-		baseDir:    baseDir,
-		runtimeDir: filepath.Join(baseDir, "runtimes"),
+		baseDir:      baseDir,
+		runtimeDir:   filepath.Join(baseDir, "runtimes"),
 		factorioPath: factorioPath,
+		useSymlinks:  false, // Default to copying
 	}
+}
+
+// SetUseSymlinks configures whether to use symlinks or copy files for the overlay
+func (m *Manager) SetUseSymlinks(useSymlinks bool) {
+	m.useSymlinks = useSymlinks
 }
 
 // BaseDir returns the base directory for instances
@@ -104,10 +112,11 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 		return nil, fmt.Errorf("creating instance directory: %w", err)
 	}
 
-	// Find base Factorio installation
-	baseDir, err := m.findBaseFactorio()
+	// Find base Factorio installation for the specific runtime
+	runtimeName := cfg.GetRuntime()
+	baseDir, err := m.findBaseFactorioForRuntime(runtimeName)
 	if err != nil {
-		return nil, fmt.Errorf("finding base Factorio installation: %w", err)
+		return nil, fmt.Errorf("finding base Factorio installation for runtime %s: %w", runtimeName, err)
 	}
 
 	// Create instance-specific directories (real files)
@@ -118,9 +127,9 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 		}
 	}
 
-	// Create symlinks to base Factorio directories
-	if err := m.createSymlinkOverlay(instDir, baseDir); err != nil {
-		return nil, fmt.Errorf("creating symlink overlay: %w", err)
+	// Create overlay to base Factorio directories
+	if err := m.createOverlay(instDir, baseDir); err != nil {
+		return nil, fmt.Errorf("creating overlay: %w", err)
 	}
 
 	// Save configuration
@@ -194,12 +203,49 @@ func (m *Manager) Create(cfg *Config) (*Instance, error) {
 		}
 	}
 
+	// Create config-path.cfg in the root directory
+	configPathContent := `config-path=__PATH__executable__/../../config
+
+#This value specifies the way the application generates default values for path.read-data and path.write-data
+#When set to true, it will use system directories (Users/Name/AppData/Roaming/Factorio on windows), this is set to true
+#for the installer versions of Factorio, as people will usually install it in program files, and the application can't write
+#to program files by default (without UAC turned off), similar with osx/linux packages.
+#When set to false (default value for zip package), it will use application root directory, this is usable to create self-sustainable
+#Factorio directory that can be copied anywhere needed (on usb etc), also for people, who don't like to manipulate saves
+#in the windows users directory structure (as me, kovarex).
+#Note, that once the values in config are generated, this value has no effects (unless you delete config, or the path.read-data/path.write-data values)
+use-system-read-write-data-directories=false`
+	configPathFile := filepath.Join(instDir, "config-path.cfg")
+	if err := os.WriteFile(configPathFile, []byte(configPathContent), 0644); err != nil {
+		return nil, fmt.Errorf("creating config-path.cfg: %w", err)
+	}
+
+	// Create player-data.json with service credentials
+	playerData := map[string]interface{}{
+		"service-username": "",
+		"service-token":    "",
+	}
+	playerDataPath := filepath.Join(instDir, "player-data.json")
+	if err := SaveJSON(playerDataPath, playerData); err != nil {
+		return nil, fmt.Errorf("creating player-data.json: %w", err)
+	}
+
 	return &Instance{
 		Config:  cfg,
 		Dir:     instDir,
 		State:   StateStopped,
 		BaseDir: baseDir,
 	}, nil
+}
+
+// UpdatePlayerData updates the player-data.json file with service credentials
+func (m *Manager) UpdatePlayerData(inst *Instance, username, token string) error {
+	playerData := map[string]interface{}{
+		"service-username": username,
+		"service-token":    token,
+	}
+	playerDataPath := filepath.Join(inst.Dir, "player-data.json")
+	return SaveJSON(playerDataPath, playerData)
 }
 
 // Remove removes an instance and optionally creates a backup
@@ -226,50 +272,94 @@ func (m *Manager) Remove(name string, backup bool) error {
 	return nil
 }
 
-// findBaseFactorio finds the base Factorio installation directory
-func (m *Manager) findBaseFactorio() (string, error) {
-	// If manager has a specific Factorio path, use it
+// findBaseFactorioForRuntime finds the base Factorio installation for a specific runtime
+func (m *Manager) findBaseFactorioForRuntime(runtimeName string) (string, error) {
+	// If manager has a specific Factorio path, use it (for copying from system)
 	if m.factorioPath != "" {
 		if _, err := os.Stat(m.factorioPath); err == nil {
 			if m.isValidFactorioInstallation(m.factorioPath) {
-				return m.factorioPath, nil
+				// Copy from system installation to runtimes if needed
+				return m.ensureRuntimeFromSystem(m.factorioPath, runtimeName)
 			}
 			return "", fmt.Errorf("specified Factorio path is not a valid installation: %s", m.factorioPath)
 		}
 		return "", fmt.Errorf("specified Factorio path does not exist: %s", m.factorioPath)
 	}
-	
-	// Common Factorio installation paths
-	possiblePaths := []string{
-		"/usr/share/factorio",
-		"/usr/local/share/factorio", 
-		"/opt/factorio",
-		"/usr/games/factorio",
-		"/Applications/factorio.app/Contents/data", // macOS
-		"C:\\Program Files\\Factorio",              // Windows
-		"C:\\Program Files (x86)\\Factorio",        // Windows
+
+	// Look for the specific runtime in runtimes directory
+	runtimePath := filepath.Join(m.runtimeDir, runtimeName)
+	if _, err := os.Stat(runtimePath); err == nil {
+		if m.isValidFactorioInstallation(runtimePath) {
+			return runtimePath, nil
+		}
+		return "", fmt.Errorf("runtime %s exists but is not a valid Factorio installation", runtimeName)
 	}
-	
-	// Check environment variable first
-	if factorioPath := os.Getenv("FACTORIO_PATH"); factorioPath != "" {
-		if _, err := os.Stat(factorioPath); err == nil {
-			if m.isValidFactorioInstallation(factorioPath) {
-				return factorioPath, nil
+
+	return "", fmt.Errorf("runtime %s not found in runtimes directory. Please install Factorio runtime %s in %s or use --factorio-path to copy from system installation", runtimeName, runtimeName, m.runtimeDir)
+}
+
+// findBaseFactorio finds the base Factorio installation in the runtimes directory (legacy)
+func (m *Manager) findBaseFactorio() (string, error) {
+	// If manager has a specific Factorio path, use it (for copying from system)
+	if m.factorioPath != "" {
+		if _, err := os.Stat(m.factorioPath); err == nil {
+			if m.isValidFactorioInstallation(m.factorioPath) {
+				// Copy from system installation to runtimes if needed
+				return m.ensureRuntimeFromSystem(m.factorioPath, "system")
+			}
+			return "", fmt.Errorf("specified Factorio path is not a valid installation: %s", m.factorioPath)
+		}
+		return "", fmt.Errorf("specified Factorio path does not exist: %s", m.factorioPath)
+	}
+
+	// Look for Factorio in runtimes directory
+	// Check for any version in runtimes directory
+	entries, err := os.ReadDir(m.runtimeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("runtimes directory does not exist. Please install Factorio in the runtimes directory or use --factorio-path to copy from system installation")
+		}
+		return "", fmt.Errorf("reading runtimes directory: %w", err)
+	}
+
+	// Find the first valid Factorio installation
+	for _, entry := range entries {
+		if entry.IsDir() {
+			runtimePath := filepath.Join(m.runtimeDir, entry.Name())
+			if m.isValidFactorioInstallation(runtimePath) {
+				return runtimePath, nil
 			}
 		}
 	}
-	
-	// Check common paths
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			// Verify it's a Factorio installation by checking for key files
-			if m.isValidFactorioInstallation(path) {
-				return path, nil
-			}
+
+	return "", fmt.Errorf("no Factorio installation found in runtimes directory. Please install Factorio in %s or use --factorio-path to copy from system installation", m.runtimeDir)
+}
+
+// ensureRuntimeFromSystem copies a system Factorio installation to the runtimes directory
+func (m *Manager) ensureRuntimeFromSystem(systemPath, runtimeName string) (string, error) {
+	// Create runtimes directory if it doesn't exist
+	if err := os.MkdirAll(m.runtimeDir, 0755); err != nil {
+		return "", fmt.Errorf("creating runtimes directory: %w", err)
+	}
+
+	runtimePath := filepath.Join(m.runtimeDir, runtimeName)
+
+	// Check if we already have this copied
+	if _, err := os.Stat(runtimePath); err == nil {
+		if m.isValidFactorioInstallation(runtimePath) {
+			return runtimePath, nil
 		}
 	}
-	
-	return "", fmt.Errorf("Factorio installation not found. Please set FACTORIO_PATH environment variable, use --factorio-path flag, or install Factorio in a standard location")
+
+	fmt.Printf("Copying Factorio from system installation to runtimes directory...\n")
+
+	// Copy the entire Factorio installation
+	if err := m.copyDirectory(systemPath, runtimePath); err != nil {
+		return "", fmt.Errorf("copying Factorio from system installation: %w", err)
+	}
+
+	fmt.Printf("Factorio copied to %s\n", runtimePath)
+	return runtimePath, nil
 }
 
 // isValidFactorioInstallation checks if a directory contains a valid Factorio installation
@@ -279,19 +369,19 @@ func (m *Manager) isValidFactorioInstallation(path string) bool {
 		"bin",
 		"data",
 	}
-	
+
 	for _, reqPath := range requiredPaths {
 		if _, err := os.Stat(filepath.Join(path, reqPath)); err != nil {
 			return false
 		}
 	}
-	
+
 	// Check for base directory (can be at root or in data/)
 	basePaths := []string{
 		filepath.Join(path, "base"),
 		filepath.Join(path, "data", "base"),
 	}
-	
+
 	baseFound := false
 	for _, basePath := range basePaths {
 		if _, err := os.Stat(basePath); err == nil {
@@ -299,42 +389,150 @@ func (m *Manager) isValidFactorioInstallation(path string) bool {
 			break
 		}
 	}
-	
+
 	return baseFound
+}
+
+// createOverlay creates either symlinks or copies of base Factorio directories
+func (m *Manager) createOverlay(instDir, baseDir string) error {
+	if m.useSymlinks {
+		return m.createSymlinkOverlay(instDir, baseDir)
+	}
+	return m.createCopyOverlay(instDir, baseDir)
 }
 
 // createSymlinkOverlay creates symlinks to base Factorio directories
 func (m *Manager) createSymlinkOverlay(instDir, baseDir string) error {
 	// Directories to symlink from base Factorio installation
 	baseDirs := []string{
-		"bin",        // Factorio executable and libraries
-		"data",       // Game data files
-		"graphics",   // Graphics assets
-		"locale",     // Localization files
-		"core",       // Core game files
-		"base",       // Base game mod
+		"bin",      // Factorio executable and libraries
+		"data",     // Game data files
+		"graphics", // Graphics assets
+		"locale",   // Localization files
+		"core",     // Core game files
+		"base",     // Base game mod
 	}
-	
+
 	for _, dir := range baseDirs {
 		basePath := filepath.Join(baseDir, dir)
 		instancePath := filepath.Join(instDir, dir)
-		
+
 		// Check if base directory exists
 		if _, err := os.Stat(basePath); err != nil {
 			continue // Skip if base directory doesn't exist
 		}
-		
+
 		// Remove existing file/directory if it exists
 		if err := os.RemoveAll(instancePath); err != nil {
 			return fmt.Errorf("removing existing %s: %w", dir, err)
 		}
-		
+
 		// Create symlink to base directory
 		if err := os.Symlink(basePath, instancePath); err != nil {
 			return fmt.Errorf("creating symlink for %s: %w", dir, err)
 		}
 	}
-	
+
+	return nil
+}
+
+// createCopyOverlay copies base Factorio directories to the instance
+func (m *Manager) createCopyOverlay(instDir, baseDir string) error {
+	// Directories to copy from base Factorio installation
+	baseDirs := []string{
+		"bin",      // Factorio executable and libraries
+		"data",     // Game data files
+		"graphics", // Graphics assets
+		"locale",   // Localization files
+		"core",     // Core game files
+		"base",     // Base game mod
+	}
+
+	for _, dir := range baseDirs {
+		basePath := filepath.Join(baseDir, dir)
+		instancePath := filepath.Join(instDir, dir)
+
+		// Check if base directory exists
+		if _, err := os.Stat(basePath); err != nil {
+			continue // Skip if base directory doesn't exist
+		}
+
+		// Remove existing file/directory if it exists
+		if err := os.RemoveAll(instancePath); err != nil {
+			return fmt.Errorf("removing existing %s: %w", dir, err)
+		}
+
+		// Copy the directory recursively
+		if err := m.copyDirectory(basePath, instancePath); err != nil {
+			return fmt.Errorf("copying %s: %w", dir, err)
+		}
+	}
+
+	return nil
+}
+
+// copyDirectory recursively copies a directory
+func (m *Manager) copyDirectory(src, dst string) error {
+	// Create destination directory
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return fmt.Errorf("creating destination directory: %w", err)
+	}
+
+	// Read source directory
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("reading source directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// Recursively copy subdirectory
+			if err := m.copyDirectory(srcPath, dstPath); err != nil {
+				return fmt.Errorf("copying subdirectory %s: %w", entry.Name(), err)
+			}
+		} else {
+			// Copy file
+			if err := m.copyFile(srcPath, dstPath); err != nil {
+				return fmt.Errorf("copying file %s: %w", entry.Name(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a single file
+func (m *Manager) copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("opening source file: %w", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("creating destination file: %w", err)
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("copying file content: %w", err)
+	}
+
+	// Copy file permissions
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return fmt.Errorf("getting source file info: %w", err)
+	}
+
+	if err := os.Chmod(dst, srcInfo.Mode()); err != nil {
+		return fmt.Errorf("setting file permissions: %w", err)
+	}
+
 	return nil
 }
 
@@ -451,11 +649,11 @@ func (m *Manager) ListBackups(name string) ([]string, error) {
 // RestoreBackup restores an instance from a backup
 func (m *Manager) RestoreBackup(backupName string) error {
 	backupPath := filepath.Join(m.baseDir, "backups", backupName)
-	
+
 	// Extract instance name from backup name
 	// backupName format: <instance-name>-<timestamp>.tar.gz
 	base := strings.TrimSuffix(backupName, ".tar.gz")
-	
+
 	// Extract just the instance name (before the timestamp)
 	idx := strings.LastIndex(base, "-")
 	if idx == -1 {

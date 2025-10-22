@@ -17,6 +17,9 @@ type Config struct {
 	// Version of Factorio to use
 	Version string `json:"version"`
 
+	// Runtime name to use (defaults to version if not specified)
+	Runtime string `json:"runtime,omitempty"`
+
 	// Port to run the server on (if running as server)
 	Port int `json:"port,omitempty"`
 
@@ -31,6 +34,14 @@ type Config struct {
 
 	// Server settings (if running as server)
 	Server *ServerConfig `json:"server,omitempty"`
+}
+
+// GetRuntime returns the runtime name to use, defaulting to version if not specified
+func (c *Config) GetRuntime() string {
+	if c.Runtime != "" {
+		return c.Runtime
+	}
+	return c.Version
 }
 
 // ModsConfig contains mod-related configuration
@@ -127,19 +138,19 @@ func (c *Config) validate() error {
 
 	// Check if any non-built-in mods require sources
 	builtinMods := map[string]bool{
-		"base": true,
+		"base":           true,
 		"elevated-rails": true,
-		"quality": true,
-		"space-age": true,
+		"quality":        true,
+		"space-age":      true,
 	}
-	
+
 	nonBuiltinMods := []string{}
 	for _, mod := range c.Mods.Enabled {
 		if !builtinMods[mod] {
 			nonBuiltinMods = append(nonBuiltinMods, mod)
 		}
 	}
-	
+
 	if len(nonBuiltinMods) > 0 && len(c.Mods.Sources) == 0 {
 		return fmt.Errorf("mod sources are required for non-built-in mods: %v", nonBuiltinMods)
 	}

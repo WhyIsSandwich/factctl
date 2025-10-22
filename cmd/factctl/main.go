@@ -1,12 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/WhyIsSandwich/factctl/internal/auth"
 	"github.com/WhyIsSandwich/factctl/internal/instance"
 )
 
@@ -20,6 +26,7 @@ func main() {
 		config       = flag.String("config", "", "Path to instance configuration file")
 		baseDir      = flag.String("base-dir", "", "Base directory for instances (default: platform-specific)")
 		factorioPath = flag.String("factorio-path", "", "Path to Factorio installation")
+		useSymlinks  = flag.Bool("symlinks", false, "Use symlinks instead of copying files for instance overlay")
 	)
 
 	flag.Usage = func() {
@@ -28,7 +35,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  up      Create or update an instance\n")
 		fmt.Fprintf(os.Stderr, "  down    Remove an instance\n")
 		fmt.Fprintf(os.Stderr, "  run     Launch Factorio with the specified instance\n")
-		fmt.Fprintf(os.Stderr, "  logs    Stream instance logs\n\n")
+		fmt.Fprintf(os.Stderr, "  logs    Stream instance logs\n")
+		fmt.Fprintf(os.Stderr, "  auth    Configure Factorio portal credentials\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 	}
@@ -66,6 +74,9 @@ func main() {
 	} else {
 		manager = instance.NewManager(baseDirPath)
 	}
+
+	// Configure overlay method
+	manager.SetUseSymlinks(*useSymlinks)
 	runtimeManager := instance.NewRuntimeManager(baseDirPath)
 	modManager := instance.NewModManager(baseDirPath)
 	logManager := instance.NewLogManager(baseDirPath)
@@ -89,6 +100,11 @@ func main() {
 		}
 	case "logs":
 		if err := handleLogs(logManager, args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "auth":
+		if err := handleAuth(baseDirPath, args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -120,11 +136,15 @@ func handleUp(manager *instance.Manager, modManager *instance.ModManager, args [
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
 			return fmt.Errorf("configuration file not found: %s", configPath)
 		}
-		
+
 		cfg, err = instance.LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("loading configuration file: %w\nHint: Check that the file is valid JSON/JSONC", err)
 		}
+
+		// Override the name from the config file with the command-line argument
+		// This allows using the same config file for multiple instances with different names
+		cfg.Name = instanceName
 	} else {
 		// Create default configuration
 		cfg = &instance.Config{
@@ -151,17 +171,22 @@ func handleUp(manager *instance.Manager, modManager *instance.ModManager, args [
 		return fmt.Errorf("failed to create instance: %w\nHint: Check that you have write permissions to the instance directory", err)
 	}
 
+	// Update player-data.json with service credentials if available
+	if err := updatePlayerDataWithCredentials(manager, inst); err != nil {
+		fmt.Printf("Warning: Could not update player-data.json with credentials: %v\n", err)
+	}
+
 	// Install mods if specified
 	if len(cfg.Mods.Enabled) > 0 {
 		fmt.Println("Installing mods and dependencies...")
 		ctx := context.Background()
-		
+
 		// Use recursive installer to resolve all dependencies
 		installedMods, err := modManager.InstallModsRecursively(ctx, inst, cfg.Mods.Enabled)
 		if err != nil {
 			fmt.Printf("Warning: Some mods failed to install: %v\n", err)
 		}
-		
+
 		fmt.Printf("Successfully installed %d mods total\n", len(installedMods))
 	}
 
@@ -235,7 +260,7 @@ func handleRun(runtimeManager *instance.RuntimeManager, manager *instance.Manage
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return fmt.Errorf("instance configuration not found: %s\nHint: The instance may be corrupted, try recreating it", configPath)
 	}
-	
+
 	cfg, err := instance.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("loading instance configuration: %w\nHint: Check that the configuration file is valid", err)
@@ -302,7 +327,7 @@ func handleLogs(logManager *instance.LogManager, args []string) error {
 
 	if follow {
 		fmt.Printf("Streaming logs for instance '%s' (press Ctrl+C to stop)...\n", instanceName)
-		
+
 		// Create log handler
 		handler := func(entry instance.LogEntry) {
 			fmt.Printf("[%s] %s\n", entry.Time.Format("15:04:05"), entry.Message)
@@ -349,20 +374,151 @@ func validateInstanceName(name string) error {
 	if name == "" {
 		return fmt.Errorf("instance name cannot be empty")
 	}
-	
+
 	if len(name) > 50 {
 		return fmt.Errorf("instance name too long (max 50 characters)")
 	}
-	
+
 	// Check for invalid characters
 	for _, char := range name {
-		if !((char >= 'a' && char <= 'z') || 
-			 (char >= 'A' && char <= 'Z') || 
-			 (char >= '0' && char <= '9') || 
-			 char == '-' || char == '_') {
+		if !((char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '-' || char == '_') {
 			return fmt.Errorf("instance name contains invalid character '%c' (only letters, numbers, hyphens, and underscores allowed)", char)
 		}
 	}
-	
+
 	return nil
+}
+
+// handleAuth configures Factorio portal credentials
+func handleAuth(baseDir string, args []string) error {
+	fmt.Println("Configuring Factorio portal credentials...")
+	fmt.Println("You'll need your Factorio username and password to authenticate with the Factorio API.")
+	fmt.Println()
+
+	// Get username
+	fmt.Print("Factorio username: ")
+	reader := bufio.NewReader(os.Stdin)
+	username, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("reading username: %w", err)
+	}
+	username = strings.TrimSpace(username)
+
+	if username == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+
+	// Get password
+	fmt.Print("Factorio password: ")
+	password, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("reading password: %w", err)
+	}
+	password = strings.TrimSpace(password)
+
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+
+	// Authenticate with Factorio API to get token
+	fmt.Println("Authenticating with Factorio API...")
+	token, err := authenticateWithFactorio(username, password)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Create credentials
+	creds := &auth.Credentials{
+		FactorioUsername: username,
+		FactorioToken:    token,
+	}
+
+	// Save credentials to config directory
+	configDir := filepath.Join(baseDir, "config")
+	store := auth.NewStore(configDir)
+
+	if err := store.Save(creds); err != nil {
+		return fmt.Errorf("saving credentials: %w", err)
+	}
+
+	fmt.Printf("Authentication successful! Credentials saved to %s\n", filepath.Join(configDir, "credentials.json"))
+	fmt.Println("You can now use 'factctl up' to create instances with mod portal access.")
+
+	return nil
+}
+
+// authenticateWithFactorio authenticates with the Factorio API and returns a token
+func authenticateWithFactorio(username, password string) (string, error) {
+	// Prepare form data for the authentication request
+	data := url.Values{}
+	data.Set("username", username)
+	data.Set("password", password)
+	data.Set("api_version", "6") // Use latest API version
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://auth.factorio.com/api-login", strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "factctl/1.0")
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse response
+	var authResponse struct {
+		Token    string `json:"token"`
+		Username string `json:"username"`
+		Error    string `json:"error"`
+		Message  string `json:"message"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
+		return "", fmt.Errorf("parsing response: %w", err)
+	}
+
+	// Check for authentication errors
+	if authResponse.Error != "" {
+		return "", fmt.Errorf("authentication failed: %s - %s", authResponse.Error, authResponse.Message)
+	}
+
+	if authResponse.Token == "" {
+		return "", fmt.Errorf("no token received from authentication API")
+	}
+
+	return authResponse.Token, nil
+}
+
+// updatePlayerDataWithCredentials updates the player-data.json with service credentials
+func updatePlayerDataWithCredentials(manager *instance.Manager, inst *instance.Instance) error {
+	// Try to get credentials from the auth store
+	configDir := filepath.Join(manager.BaseDir(), "config")
+	store := auth.NewStore(configDir)
+
+	creds, err := store.Load()
+	if err != nil {
+		// Try default location as fallback
+		if defaultPath, err := auth.DefaultLocation(); err == nil {
+			defaultStore := auth.NewStore(filepath.Dir(defaultPath))
+			creds, err = defaultStore.Load()
+		}
+	}
+
+	if err != nil || creds.FactorioUsername == "" || creds.FactorioToken == "" {
+		// No credentials available, leave player-data.json with empty values
+		return nil
+	}
+
+	// Update player-data.json with the credentials
+	return manager.UpdatePlayerData(inst, creds.FactorioUsername, creds.FactorioToken)
 }
