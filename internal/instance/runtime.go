@@ -206,54 +206,33 @@ func (rm *RuntimeManager) getExecutablePath(runtimePath string) string {
 
 // downloadRuntime downloads and installs a specific Factorio version
 func (rm *RuntimeManager) downloadRuntime(version string) error {
+	return rm.downloadRuntimeWithBuild(version, "alpha")
+}
+
+// downloadRuntimeWithBuild downloads and installs a specific Factorio version with a specific build type
+func (rm *RuntimeManager) downloadRuntimeWithBuild(version, buildType string) error {
 	// Ensure runtime directory exists
 	if err := os.MkdirAll(rm.runtimeDir, 0755); err != nil {
 		return fmt.Errorf("creating runtime directory: %w", err)
 	}
 
-	// For now, we'll implement a basic download mechanism
-	// In a real implementation, this would download from Factorio's servers
-	// or use a package manager like Steam, etc.
+	// Create Factorio downloader
+	downloader := NewFactorioDownloader(filepath.Dir(rm.runtimeDir))
 
-	fmt.Printf("  → Creating directory structure...\n")
-	time.Sleep(200 * time.Millisecond) // Simulate directory creation
-
-	versionDir := filepath.Join(rm.runtimeDir, version)
-	if err := os.MkdirAll(versionDir, 0755); err != nil {
-		return fmt.Errorf("creating version directory: %w", err)
+	// Download Factorio
+	ctx := context.Background()
+	versionDir, err := downloader.DownloadFactorioWithBuild(ctx, version, buildType)
+	if err != nil {
+		return fmt.Errorf("downloading Factorio %s (%s): %w", version, buildType, err)
 	}
 
-	fmt.Printf("  → Downloading Factorio %s...\n", version)
-	time.Sleep(1000 * time.Millisecond) // Simulate download time
-
-	fmt.Printf("  → Extracting archive...\n")
-	time.Sleep(500 * time.Millisecond) // Simulate extraction time
-
-	// Create a placeholder executable
+	// Verify the download by checking for the executable
 	executablePath := rm.getExecutablePath(versionDir)
-	executableDir := filepath.Dir(executablePath)
-	if err := os.MkdirAll(executableDir, 0755); err != nil {
-		return fmt.Errorf("creating executable directory: %w", err)
+	if _, err := os.Stat(executablePath); err != nil {
+		return fmt.Errorf("downloaded Factorio %s (%s) not found at %s", version, buildType, executablePath)
 	}
 
-	fmt.Printf("  → Setting up executable...\n")
-	time.Sleep(300 * time.Millisecond) // Simulate setup time
-
-	// Create a simple script that explains the situation
-	scriptContent := fmt.Sprintf(`#!/bin/bash
-echo "Factorio %s is not actually installed."
-echo "This is a placeholder for the first pass implementation."
-echo "To use this tool, please install Factorio %s manually and ensure it's in your PATH."
-echo "Or implement the actual download functionality in the runtime manager."
-exit 1
-`, version, version)
-
-	if err := os.WriteFile(executablePath, []byte(scriptContent), 0755); err != nil {
-		return fmt.Errorf("creating placeholder executable: %w", err)
-	}
-
-	fmt.Printf("  → Factorio %s setup complete\n", version)
-
+	fmt.Printf("  → Factorio %s (%s) download complete\n", version, buildType)
 	return nil
 }
 

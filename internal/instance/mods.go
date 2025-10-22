@@ -443,20 +443,42 @@ func (mm *ModManager) installModFromPortal(ctx context.Context, inst *Instance, 
 // ListMods returns information about installed mods
 func (mm *ModManager) ListMods(inst *Instance) ([]*ModInfo, error) {
 	modDir := filepath.Join(inst.Dir, "mods")
-	pattern := filepath.Join(modDir, "*.zip")
 
-	matches, err := filepath.Glob(pattern)
+	// Get all entries in the mods directory
+	entries, err := os.ReadDir(modDir)
 	if err != nil {
-		return nil, fmt.Errorf("finding mod files: %w", err)
+		return nil, fmt.Errorf("reading mods directory: %w", err)
 	}
 
 	var mods []*ModInfo
-	for _, path := range matches {
-		info, err := mm.getModInfo(path)
-		if err != nil {
-			return nil, fmt.Errorf("reading mod info from %s: %w", filepath.Base(path), err)
+	for _, entry := range entries {
+		// Skip base mod (it's built-in)
+		if entry.Name() == "base" {
+			continue
 		}
-		mods = append(mods, info)
+
+		path := filepath.Join(modDir, entry.Name())
+
+		// Check if it's a symlink (local filesystem mod)
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err := mm.readModInfoFromDirectory(path)
+			if err != nil {
+				// If we can't read the symlinked directory, skip it
+				continue
+			}
+			mods = append(mods, info)
+			continue
+		}
+
+		// Check if it's a ZIP file
+		if strings.HasSuffix(entry.Name(), ".zip") {
+			info, err := mm.getModInfo(path)
+			if err != nil {
+				// If we can't read the ZIP file, skip it
+				continue
+			}
+			mods = append(mods, info)
+		}
 	}
 
 	return mods, nil
@@ -606,6 +628,18 @@ func (mm *ModManager) updateModList(inst *Instance, modName string, enabled bool
 
 // installModFromDirectSource installs a mod from a direct source specification
 func (mm *ModManager) installModFromDirectSource(ctx context.Context, inst *Instance, modSpec string) error {
+	// Parse the source to check if it's a local filesystem source
+	src, err := resolve.ParseSource(modSpec)
+	if err != nil {
+		return fmt.Errorf("parsing source: %w", err)
+	}
+
+	// Handle local filesystem sources differently
+	if src.Type == resolve.SourceFile {
+		return mm.installModFromLocalFilesystem(ctx, inst, src.Path)
+	}
+
+	// For all other sources, use the existing logic
 	// Create temporary buffer for mod content
 	var buf bytes.Buffer
 
@@ -651,6 +685,81 @@ func (mm *ModManager) installModFromDirectSource(ctx context.Context, inst *Inst
 	}
 
 	return nil
+}
+
+// installModFromLocalFilesystem installs a mod from a local filesystem path by creating a symlink
+func (mm *ModManager) installModFromLocalFilesystem(ctx context.Context, inst *Instance, localPath string) error {
+	// Check if the local path exists
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		return fmt.Errorf("local mod path does not exist: %s", localPath)
+	}
+
+	// Read mod info from the local directory
+	modInfo, err := mm.readModInfoFromDirectory(localPath)
+	if err != nil {
+		return fmt.Errorf("reading mod info from local directory: %w", err)
+	}
+
+	// Check Factorio version compatibility
+	if modInfo.FactorioVersion != "" {
+		if !isVersionCompatible(inst.Config.Version, modInfo.FactorioVersion) {
+			return fmt.Errorf("mod requires Factorio %s but instance uses %s",
+				modInfo.FactorioVersion, inst.Config.Version)
+		}
+	}
+
+	// Cache mod info
+	mm.mu.Lock()
+	mm.modInfos[modInfo.Name] = modInfo
+	mm.mu.Unlock()
+
+	// Install dependencies first
+	if err := mm.installDependencies(ctx, inst, modInfo); err != nil {
+		return fmt.Errorf("installing dependencies: %w", err)
+	}
+
+	// Create symlink to the local mod directory
+	modDir := filepath.Join(inst.Dir, "mods")
+	modLinkPath := filepath.Join(modDir, modInfo.Name)
+
+	// Remove existing symlink if it exists
+	if _, err := os.Lstat(modLinkPath); err == nil {
+		if err := os.Remove(modLinkPath); err != nil {
+			return fmt.Errorf("removing existing symlink: %w", err)
+		}
+	}
+
+	// Create symlink to the local mod directory
+	if err := os.Symlink(localPath, modLinkPath); err != nil {
+		return fmt.Errorf("creating symlink to local mod: %w", err)
+	}
+
+	fmt.Printf("  → Symlinked local mod '%s' from %s\n", modInfo.Name, localPath)
+
+	// Update mod-list.json
+	if err := mm.updateModList(inst, modInfo.Name, true); err != nil {
+		return fmt.Errorf("updating mod list: %w", err)
+	}
+
+	return nil
+}
+
+// readModInfoFromDirectory reads mod info from a local directory
+func (mm *ModManager) readModInfoFromDirectory(dirPath string) (*ModInfo, error) {
+	infoPath := filepath.Join(dirPath, "info.json")
+
+	// Read info.json file
+	data, err := os.ReadFile(infoPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading info.json: %w", err)
+	}
+
+	var modInfo ModInfo
+	if err := json.Unmarshal(data, &modInfo); err != nil {
+		return nil, fmt.Errorf("parsing info.json: %w", err)
+	}
+
+	return &modInfo, nil
 }
 
 // installModFromRegistry searches the pre-built registry for a mod and installs it

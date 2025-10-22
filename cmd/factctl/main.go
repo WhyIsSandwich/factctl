@@ -36,7 +36,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  down    Remove an instance\n")
 		fmt.Fprintf(os.Stderr, "  run     Launch Factorio with the specified instance\n")
 		fmt.Fprintf(os.Stderr, "  logs    Stream instance logs\n")
-		fmt.Fprintf(os.Stderr, "  auth    Configure Factorio portal credentials\n\n")
+		fmt.Fprintf(os.Stderr, "  auth    Configure Factorio portal credentials\n")
+		fmt.Fprintf(os.Stderr, "  download Download Factorio to runtimes (usage: <build-type> [version])\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 	}
@@ -105,6 +106,11 @@ func main() {
 		}
 	case "auth":
 		if err := handleAuth(baseDirPath, args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "download":
+		if err := handleDownload(baseDirPath, args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -521,4 +527,68 @@ func updatePlayerDataWithCredentials(manager *instance.Manager, inst *instance.I
 
 	// Update player-data.json with the credentials
 	return manager.UpdatePlayerData(inst, creds.FactorioUsername, creds.FactorioToken)
+}
+
+// handleDownload downloads a Factorio version
+func handleDownload(baseDir string, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("build type is required\nUsage: factctl download <build-type> [version] [name] [--allow-experimental]\nBuild types: alpha, headless, expansion, demo\nUse 'latest' for version to get the latest release\nName is optional and will default to smart naming based on version and build type\nUse --allow-experimental to get experimental versions when using 'latest'")
+	}
+
+	buildType := args[0]
+	version := "latest" // Default to latest
+	name := ""          // Default to smart naming
+	allowExperimental := false
+
+	// Parse arguments
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--allow-experimental" {
+			allowExperimental = true
+		} else if version == "latest" && arg != "--allow-experimental" {
+			// First non-flag argument is version
+			version = arg
+		} else if version != "latest" && arg != "--allow-experimental" && name == "" {
+			// Second non-flag argument is name
+			name = arg
+		}
+	}
+
+	// Validate build type
+	validBuildTypes := []string{"alpha", "headless", "expansion", "demo"}
+	valid := false
+	for _, bt := range validBuildTypes {
+		if buildType == bt {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid build type: %s\nValid build types: %v", buildType, validBuildTypes)
+	}
+
+	// Create downloader
+	downloader := instance.NewFactorioDownloader(baseDir)
+
+	// If version is "latest", get the latest version
+	if version == "latest" {
+		ctx := context.Background()
+		latestVersion, err := downloader.GetLatestVersion(ctx, buildType, allowExperimental)
+		if err != nil {
+			return fmt.Errorf("getting latest version: %w", err)
+		}
+		version = latestVersion
+	}
+
+	// Download Factorio
+	ctx := context.Background()
+	versionDir, err := downloader.DownloadFactorioWithName(ctx, version, buildType, name)
+	if err != nil {
+		return fmt.Errorf("downloading Factorio %s (%s): %w", version, buildType, err)
+	}
+
+	// Show the runtime name that was used
+	runtimeName := filepath.Base(versionDir)
+	fmt.Printf("Factorio %s (%s) downloaded successfully as runtime '%s' to %s\n", version, buildType, runtimeName, versionDir)
+	return nil
 }
