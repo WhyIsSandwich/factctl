@@ -44,7 +44,7 @@ jobs:
         GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags="-s -w" -o factctl${{ matrix.ext }} cmd/factctl/main.go
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: factctl-${{ matrix.goos }}-${{ matrix.goarch }}
         path: factctl${{ matrix.ext }}
@@ -56,7 +56,7 @@ jobs:
     
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
