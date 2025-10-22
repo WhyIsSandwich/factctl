@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -62,10 +65,10 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          linux-amd64/factctl
-          windows-amd64/factctl.exe
-          darwin-amd64/factctl
-          linux-arm64/factctl
+          factctl-linux-amd64/factctl
+          factctl-windows-amd64/factctl.exe
+          factctl-darwin-amd64/factctl
+          factctl-linux-arm64/factctl
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
