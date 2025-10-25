@@ -14,6 +14,7 @@ import (
 
 	"github.com/WhyIsSandwich/factctl/internal/auth"
 	"github.com/WhyIsSandwich/factctl/internal/instance"
+	"golang.org/x/term"
 )
 
 const version = "0.1.0"
@@ -417,13 +418,14 @@ func handleAuth(baseDir string, args []string) error {
 		return fmt.Errorf("username cannot be empty")
 	}
 
-	// Get password
+	// Get password with masking
 	fmt.Print("Factorio password: ")
-	password, err := reader.ReadString('\n')
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		return fmt.Errorf("reading password: %w", err)
 	}
-	password = strings.TrimSpace(password)
+	password := string(passwordBytes)
+	fmt.Println() // Add newline after masked input
 
 	if password == "" {
 		return fmt.Errorf("password cannot be empty")
